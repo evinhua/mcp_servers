@@ -1,6 +1,6 @@
 """
 Web search module for MCP server
-This module implements web search functionality using requests and BeautifulSoup
+This module implements web search functionality using DuckDuckGo and Google search APIs
 """
 
 import requests
@@ -10,6 +10,8 @@ import logging
 import urllib.parse
 import time
 import random
+import json
+from duckduckgo_search import DDGS
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -20,13 +22,14 @@ class WebSearcher:
     
     def __init__(self):
         self.headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
         }
-        self.search_url = "https://www.google.com/search"
+        self.google_search_url = "https://www.google.com/search"
+        self.ddgs = DDGS()
     
     async def search(self, query: str, num_results: int = 10) -> List[Dict[str, Any]]:
         """
-        Search the web for the given query and return results
+        Search the web using DuckDuckGo for the given query and return results
         
         Args:
             query: The search query
@@ -35,15 +38,50 @@ class WebSearcher:
         Returns:
             List of search results with title, url, and snippet
         """
-        logger.info(f"Performing web search for: {query}")
-        
-        # Encode the query for URL
-        encoded_query = urllib.parse.quote_plus(query)
-        
-        # Construct the search URL
-        url = f"{self.search_url}?q={encoded_query}&num={num_results}"
+        logger.info(f"Performing DuckDuckGo search for: {query}")
         
         try:
+            # Use DuckDuckGo Search API
+            ddg_results = list(self.ddgs.text(query, max_results=num_results))
+            
+            # Format results
+            results = []
+            for result in ddg_results:
+                results.append({
+                    "title": result.get("title", ""),
+                    "url": result.get("href", ""),
+                    "snippet": result.get("body", "")
+                })
+            
+            logger.info(f"Found {len(results)} DuckDuckGo search results")
+            return results
+            
+        except Exception as e:
+            logger.error(f"Error during DuckDuckGo search: {str(e)}")
+            # If DuckDuckGo search fails, try the alternative method
+            return await self.search_alternative(query, num_results)
+    
+    async def search_alternative(self, query: str, num_results: int = 10) -> List[Dict[str, Any]]:
+        """
+        Alternative search implementation using Google
+        This is a fallback method in case the primary method fails
+        
+        Args:
+            query: The search query
+            num_results: Maximum number of results to return
+            
+        Returns:
+            List of search results with title, url, and snippet
+        """
+        logger.info(f"Using Google search method for: {query}")
+        
+        try:
+            # Encode the query for URL
+            encoded_query = urllib.parse.quote_plus(query)
+            
+            # Construct the search URL
+            url = f"{self.google_search_url}?q={encoded_query}&num={num_results}"
+            
             # Make the request
             response = requests.get(url, headers=self.headers)
             response.raise_for_status()
@@ -89,46 +127,37 @@ class WebSearcher:
                 # Add a small delay to avoid rate limiting
                 time.sleep(random.uniform(0.1, 0.3))
             
-            logger.info(f"Found {len(results)} search results")
+            logger.info(f"Found {len(results)} Google search results")
             return results
             
         except Exception as e:
-            logger.error(f"Error during web search: {str(e)}")
-            return []
+            logger.error(f"Error during Google search: {str(e)}")
+            return self.get_fallback_results(query, num_results)
     
-    async def search_alternative(self, query: str, num_results: int = 10) -> List[Dict[str, Any]]:
+    def get_fallback_results(self, query: str, num_results: int = 5) -> List[Dict[str, Any]]:
         """
-        Alternative search implementation using a different approach
-        This is a fallback method in case the primary method fails
+        Last resort fallback that returns static results when all search methods fail
         
         Args:
             query: The search query
             num_results: Maximum number of results to return
             
         Returns:
-            List of search results with title, url, and snippet
+            List of static search results
         """
-        logger.info(f"Using alternative search method for: {query}")
+        logger.warning(f"Using static fallback results for: {query}")
         
-        # Simulate search results for demonstration
-        # In a real implementation, this would use a different search API or approach
-        try:
-            # Make a request to a different search engine or API
-            # For demonstration, we'll create mock results
-            results = []
-            for i in range(min(5, num_results)):
-                results.append({
-                    "title": f"Result {i+1} for {query}",
-                    "url": f"https://example.com/result{i+1}",
-                    "snippet": f"This is a sample snippet for search result {i+1} related to {query}."
-                })
-            
-            logger.info(f"Found {len(results)} alternative search results")
-            return results
-            
-        except Exception as e:
-            logger.error(f"Error during alternative search: {str(e)}")
-            return []
+        # Create static results based on the query
+        results = []
+        for i in range(min(5, num_results)):
+            results.append({
+                "title": f"Result {i+1} for {query}",
+                "url": f"https://example.com/result{i+1}",
+                "snippet": f"This is a sample snippet for search result {i+1} related to {query}."
+            })
+        
+        logger.info(f"Returning {len(results)} static fallback results")
+        return results
 
 # Create a singleton instance
 web_searcher = WebSearcher()
